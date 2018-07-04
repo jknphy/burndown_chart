@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import datetime
 from redminelib import Redmine
 from redminelib.exceptions import ResourceAttrError
