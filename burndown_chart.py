@@ -10,21 +10,29 @@ team = 'y'
 dt_today = datetime.datetime.today()
 today = datetime.datetime(dt_today.year, dt_today.month, dt_today.day, 0, 0, 0, 0)
 
-
-def get_sprint_info(sprint_number=0):
+def get_sprint_info(sprint_number = None):
     global today
     # Init with first sprint due date
-    due_date = datetime.datetime(2017, 9, 26, 23, 59, 59, 000)
+    due_date = datetime.datetime(2017, 9, 26, 23, 59, 59, 999999)
     sprint_count = 0
     while True:
             sprint_count += 1
             start_date = due_date + datetime.timedelta(minutes=1)
             due_date += datetime.timedelta(days=14)
-            # If check history for passed sprints, override today with last day of the sprint
-            if sprint_count == sprint_number and due_date <= today:
-                today = due_date
+            # Break if wanted sprint was not provided and today is in the sprint
+            if sprint_number == None and due_date > today:
                 break
-            if due_date > today:
+
+            # Sprint number is provided, so adjust settings accordingly
+            elif sprint_number == sprint_count:
+
+                # sprint is in the past, set today as last day of the sprint
+                if today > due_date:
+                    today = due_date
+
+                # sprint is in the future, set today as first day of  the sprint
+                elif today < start_date:
+                    today = start_date
                 break
     return {'num': sprint_count, 'start_date': start_date, 'due_date': due_date}
 
@@ -111,14 +119,12 @@ def query_redmine(sprint_info):
     print("Sprint end date:   " + str(sprint_info['due_date']))
 
     # Exclude epics and sagas
-    issues = [issue for issue in issues if ('[epic]' or '[saga]') not in issue.subject]
+    issues = [issue for issue in issues if ('[epic]' not in issue.subject and '[saga]' not in issue.subject)]
     # Exclude blocked
     issues = [issue for issue in issues if issue.status.name != "Blocked"]
-    # Need to add day to due_date, as it's midnight
-    filter_due_date = sprint_info['due_date']
     # Filter out issues resolved outside of the sprint
-    issues = [issue for issue in issues if (is_open(issue) or sprint_info['start_date'] <=
-                                            issue.closed_on <= filter_due_date)]
+    issues = [issue for issue in issues if (is_open(issue) or
+                sprint_info['start_date'] <= issue.closed_on <= sprint_info['due_date'])]
     return issues
 
 
@@ -167,9 +173,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sprint", help="Provide sprint number for which you want to see the burndown chart")
     args = parser.parse_args()
-    sprint_info = get_sprint_info(int(args.sprint) if args.sprint else None)
+    # Pass sprint number if provided as an argument
+    sprint_info = get_sprint_info(int(args.sprint)) if args.sprint else get_sprint_info()
     stories = query_redmine(sprint_info)
     actual_remaining, total_story_points = calculate_burn(stories, sprint_info)
+    if total_story_points == 0:
+        print("No story points assigned, not plotting burndown chart!")
+        return
     plot_chart(sprint_info, total_story_points, actual_remaining)
 
 
