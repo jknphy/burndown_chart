@@ -105,12 +105,13 @@ def is_open(issue):
     return issue.status.name != "Resolved" and issue.status.name != "Rejected"
 
 
-def query_redmine(sprint_info):
+def query_redmine(sprint_info, apikey = None):
     project_list = ['suseqa', 'openqav3', 'openqatests']
     str_start_date = sprint_info['start_date'].strftime(dt_format)
+    str_due_date = (sprint_info['due_date'] + datetime.timedelta(days=1)).strftime(dt_format)
     str_due_date = sprint_info['due_date'].strftime(dt_format)
     date_interval = '><' + str_start_date + '|' + str_due_date
-    rm = Redmine('https://progress.opensuse.org', key='XXXXXXX')
+    rm = Redmine('https://progress.opensuse.org', key=apikey)
     issues = rm.issue.filter( project_ids=project_list,
                               status_id='*',
                               due_date=date_interval,
@@ -118,11 +119,13 @@ def query_redmine(sprint_info):
     print("Sprint start date: " + str(sprint_info['start_date']))
     print("Sprint end date:   " + str(sprint_info['due_date']))
 
+    print("\n".join(map(str, issues)))
     # Exclude epics and sagas
     issues = [issue for issue in issues if ('[epic]' not in issue.subject and '[saga]' not in issue.subject)]
     # Exclude blocked
     issues = [issue for issue in issues if issue.status.name != "Blocked"]
     # Filter out issues resolved outside of the sprint
+
     issues = [issue for issue in issues if (is_open(issue) or
                 sprint_info['start_date'] <= issue.closed_on <= sprint_info['due_date'])]
     return issues
@@ -163,7 +166,8 @@ def calculate_burn(stories, sprint_info):
             elif closed_on.weekday() == 6:
                 closed_on += datetime.timedelta(days=1)  # if resolved on Sunday, move to Monday
             actual_remaining[closed_on.strftime(dt_format)]['value'] -= story_points
-            actual_remaining[closed_on.strftime(dt_format)]['story_list'].append("[" + str(story_points) + "] @" + story.assigned_to.name + ": " + story.subject)
+            story_desc = "[" + str(story_points) + "] @" + (story.assigned_to.name if hasattr(story, 'assigned_to') else '') + ": " + story.subject
+            actual_remaining[closed_on.strftime(dt_format)]['story_list'].append(story_desc)
 
     actual_remaining = adjust_remaining(actual_remaining, total_story_points, sprint_info)
     return actual_remaining, total_story_points
@@ -172,10 +176,11 @@ def calculate_burn(stories, sprint_info):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sprint", help="Provide sprint number for which you want to see the burndown chart")
+    parser.add_argument("--apikey", help="Provide redmine apkey to have access to all projects")
     args = parser.parse_args()
     # Pass sprint number if provided as an argument
     sprint_info = get_sprint_info(int(args.sprint)) if args.sprint else get_sprint_info()
-    stories = query_redmine(sprint_info)
+    stories = query_redmine(sprint_info, args.apikey)
     actual_remaining, total_story_points = calculate_burn(stories, sprint_info)
     if total_story_points == 0:
         print("No story points assigned, not plotting burndown chart!")
